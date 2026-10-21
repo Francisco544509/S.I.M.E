@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulação 3D - S.I.M.E</title>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        industrial: {
+                            950: '#0a0d14',
+                            900: '#0f141c',
+                            800: '#1a222d',
+                            700: '#263342',
+                            accent: '#ff6b00',
+                            glow: '#ff9900',
+                            lcdBg: '#0d260e',
+                            lcdText: '#39ff14'
+                        }
+                    },
+                    fontFamily: {
+                        mono: ['Courier New', 'Courier', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Google Fonts for LCD display -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+
+    <!-- Three.js Library & OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0a0d14;
+            color: #e2e8f0;
+            user-select: none;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+
+        /* Glassmorphism Dark HUD Panel */
+        .hud-panel {
+            background: rgba(15, 20, 28, 0.92);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        /* Custom LCD Screen Font & Glow */
+        .lcd-display {
+            font-family: 'VT323', monospace;
+            background-color: #0d260e;
+            color: #39ff14;
+            text-shadow: 0 0 6px rgba(57, 255, 20, 0.8);
+            border: 3px solid #1e293b;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.9);
+            letter-spacing: 2px;
+        }
+
+        .lcd-warning {
+            background-color: #2b0d0d !important;
+            color: #ff3333 !important;
+            text-shadow: 0 0 8px rgba(255, 51, 51, 0.9) !important;
+        }
+
+        /* Custom Range Input Styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: #263342;
+            border-radius: 6px;
+            height: 8px;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #ff6b00;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(255, 107, 0, 0.8);
+            transition: all 0.2s ease;
+        }
+
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
+            background: #ff8533;
+        }
+
+        /* Custom Scrollbar for Controls Sidebar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(10, 13, 20, 0.8);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+
+        /* Pulse animation for safety alerts */
+        @keyframes alertPulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(0.98); }
+        }
+
+        .pulse-alert {
+            animation: alertPulse 0.8s infinite;
+        }
+    </style>
+</head>
+<body class="w-screen h-screen overflow-hidden flex flex-col md:flex-row">
+
+    <!-- ========================================================================
+         LEFT SIDEBAR: CONTROLS, LCD, TELEMETRY & LOGS (SIDE-BY-SIDE LAYOUT)
+         ======================================================================== -->
+    <aside class="w-full md:w-[420px] lg:w-[460px] h-full flex flex-col justify-between hud-panel border-r border-slate-800 z-20 overflow-y-auto shrink-0">
+        
+        <!-- HEADER -->
+        <header class="p-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                    <i class="fa-solid fa-industry text-amber-500 text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-base font-bold tracking-wider text-slate-100 uppercase">S.I.M.E</h1>
+                    <p class="text-[11px] text-slate-400 font-mono">Controlador: <span class="text-sky-400 font-bold">ESP32 DevKit v1</span></p>
+                </div>
+            </div>
+
+            <span id="system-status-badge" class="px-2.5 py-1 rounded text-[11px] font-bold font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                OPERACIONAL
+            </span>
+        </header>
+
+        <!-- MAIN CONTROLS & TELEMETRY CONTENT -->
+        <div class="p-4 space-y-4 flex-1">
+            
+            <!-- 1. VIRTUAL LCD 16x2 DISPLAY -->
+            <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800 shadow-xl">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-xs font-mono font-semibold text-slate-400 flex items-center gap-2">
+                        <i class="fa-solid fa-microchip text-sky-400"></i> DISPLAY LCD 16x2 (I2C)
+                    </span>
+                    <div class="flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                        <span class="text-[10px] text-slate-400 font-mono">I2C: 0x27</span>
+                    </div>
+                </div>
+
+                <!-- LCD Frame -->
+                <div id="lcd-screen" class="lcd-display p-3 rounded-md uppercase font-mono tracking-widest text-lg leading-tight select-none">
+                    <div id="lcd-line1" class="whitespace-pre">SYS: AGUARDANDO  </div>
+                    <div id="lcd-line2" class="whitespace-pre">T: 25C | MET: 0% </div>
+                </div>
+            </div>
+
+            <!-- 2. SYSTEM STATUS LEDS & ACTUATORS -->
+            <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                <h2 class="text-xs font-bold font-mono text-slate-300 mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-lightbulb text-amber-400"></i> STATUS DOS LEDS & ATUADORES
+                </h2>
+
+                <div class="grid grid-cols-3 gap-2 mb-3">
+                    <!-- LED Green -->
+                    <div class="flex flex-col items-center p-2 bg-slate-950/60 rounded-lg border border-slate-800">
+                        <div id="hud-led-green" class="w-4 h-4 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981] border border-emerald-800 mb-1"></div>
+                        <span class="text-[10px] font-mono text-slate-400 text-center">VERDE (OK)</span>
+                    </div>
+
+                    <!-- LED Yellow -->
+                    <div class="flex flex-col items-center p-2 bg-slate-950/60 rounded-lg border border-slate-800">
+                        <div id="hud-led-yellow" class="w-4 h-4 rounded-full bg-amber-950 border border-amber-800 mb-1"></div>
+                        <span class="text-[10px] font-mono text-slate-400 text-center">AMARELO (PROX)</span>
+                    </div>
+
+                    <!-- LED Red -->
+                    <div class="flex flex-col items-center p-2 bg-slate-950/60 rounded-lg border border-slate-800">
+                        <div id="hud-led-red" class="w-4 h-4 rounded-full bg-red-950 border border-red-800 mb-1"></div>
+                        <span class="text-[10px] font-mono text-slate-400 text-center">VERMELHO (TEMP)</span>
+                    </div>
+                </div>
+
+                <!-- Actuators Telemetry -->
+                <div class="space-y-1.5 text-xs font-mono">
+                    <div class="flex justify-between items-center bg-slate-950/50 p-2 rounded border border-slate-800/80">
+                        <span class="text-slate-400">Motor NEMA (Driver A4988):</span>
+                        <span id="telemetry-motor" class="text-slate-500 font-bold">PARADO</span>
+                    </div>
+                    <div class="flex justify-between items-center bg-slate-950/50 p-2 rounded border border-slate-800/80">
+                        <span class="text-slate-400">Relé do Aquecimento:</span>
+                        <span id="telemetry-relay" class="text-emerald-400 font-bold">LIGADO</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. INTERACTIVE SLIDERS / SENSORS SIMULATOR -->
+            <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-800 space-y-3">
+                <h2 class="text-xs font-bold font-mono text-slate-300 border-b border-slate-800 pb-1.5 flex items-center gap-2">
+                    <i class="fa-solid fa-sliders text-amber-500"></i> CONTROLE DE SENSORES
+                </h2>
+
+                <!-- Slider 1: Iron Melt Level -->
+                <div class="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60">
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-xs font-mono text-slate-300 flex items-center gap-1.5">
+                            <i class="fa-solid fa-fill-drip text-amber-500"></i> Nível Metal
+                        </label>
+                        <span id="val-iron-level" class="text-xs font-mono font-bold text-amber-400">0%</span>
+                    </div>
+                    <input id="slider-iron-level" type="range" min="0" max="100" value="0" class="w-full">
+                    <div class="flex justify-between text-[10px] font-mono text-slate-500 mt-1">
+                        <span>Vazio (0%)</span>
+                        <span>Cheio (100%)</span>
+                    </div>
+                </div>
+
+                <!-- Slider 2: Operator Distance (HC-SR04) -->
+                <div class="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60">
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-xs font-mono text-slate-300 flex items-center gap-1.5">
+                            <i class="fa-solid fa-person-walking-arrow-loop-left text-sky-400"></i> Distância Operador (HC-SR04)
+                        </label>
+                        <span id="val-operator-dist" class="text-xs font-mono font-bold text-sky-400">120 cm</span>
+                    </div>
+                    <input id="slider-operator-dist" type="range" min="10" max="200" value="120" class="w-full">
+                    <div class="flex justify-between text-[10px] font-mono text-slate-500 mt-1">
+                        <span class="text-amber-400 font-bold">Perigo (&lt;50cm)</span>
+                        <span>Seguro (200cm)</span>
+                    </div>
+                </div>
+
+                <!-- Slider 3: Temperature (DS18B20) -->
+                <div class="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60">
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-xs font-mono text-slate-300 flex items-center gap-1.5">
+                            <i class="fa-solid fa-temperature-high text-red-400"></i> Temp. Tanque (DS18B20)
+                        </label>
+                        <span id="val-temperature" class="text-xs font-mono font-bold text-red-400">250 °C</span>
+                    </div>
+                    <input id="slider-temperature" type="range" min="20" max="600" value="250" class="w-full">
+                    <div class="flex justify-between text-[10px] font-mono text-slate-500 mt-1">
+                        <span>20°C</span>
+                        <span class="text-red-400 font-bold">Alerta (&ge;500°C)</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4. ACTION BUTTONS & EMERGENCY STOP -->
+            <div class="space-y-2">
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btn-start-cycle" class="bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs py-2.5 px-3 rounded-lg font-bold shadow-md transition-all flex items-center justify-center gap-2 active:scale-95">
+                        <i class="fa-solid fa-play"></i> Iniciar Ciclo
+                    </button>
+                    <button id="btn-stop-cycle" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-mono text-xs py-2.5 px-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2 active:scale-95">
+                        <i class="fa-solid fa-pause"></i> Parar
+                    </button>
+                </div>
+
+                <!-- Industrial E-STOP Button -->
+                <button id="btn-emergency-stop" class="w-full bg-red-600 hover:bg-red-500 text-white text-xs font-bold font-mono py-3 rounded-xl border border-red-400 shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2 active:scale-95">
+                    <i class="fa-solid fa-triangle-exclamation text-base"></i>
+                    PARADA DE EMERGÊNCIA (E-STOP)
+                </button>
+            </div>
+
+            <!-- 5. CAMERA PRESETS -->
+            <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                <h2 class="text-xs font-bold font-mono text-slate-300 mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-video text-sky-400"></i> CÂMERAS & PRESETS
+                </h2>
+                <div class="grid grid-cols-2 gap-1.5">
+                    <button id="cam-preset-global" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] p-2 rounded-lg font-mono flex flex-col items-center gap-1 transition-all active:scale-95">
+                        <i class="fa-solid fa-globe text-sky-400"></i> Visão Geral
+                    </button>
+                    <button id="cam-preset-bucket" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] p-2 rounded-lg font-mono flex flex-col items-center gap-1 transition-all active:scale-95">
+                        <i class="fa-solid fa-dumpster-fire text-amber-500"></i> Cadinho & Molde
+                    </button>
+                    <button id="cam-preset-esp" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] p-2 rounded-lg font-mono flex flex-col items-center gap-1 transition-all active:scale-95">
+                        <i class="fa-solid fa-microchip text-emerald-400"></i> Placa ESP32
+                    </button>
+                    <button id="cam-preset-pc" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] p-2 rounded-lg font-mono flex flex-col items-center gap-1 transition-all active:scale-95">
+                        <i class="fa-solid fa-desktop text-purple-400"></i> Monitor SCADA
+                    </button>
+                </div>
+            </div>
+
+            <!-- 6. SYSTEM LOG CONSOLE -->
+            <div class="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 font-mono text-[10px]">
+                <div class="text-slate-400 border-b border-slate-800 pb-1 mb-1 flex justify-between">
+                    <span>CONSOLE ESP32 LOGS</span>
+                    <span id="log-time" class="text-slate-600">--:--:--</span>
+                </div>
+                <div id="system-log-content" class="h-16 overflow-y-auto space-y-1 text-slate-300">
+                    <div>[00:00:00] ESP32 Inicializado com sucesso.</div>
+                    <div>[00:00:01] Conectado ao Barramento I2C LCD.</div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- FOOTER -->
+        <footer class="p-3 border-t border-slate-800 bg-slate-950 text-center text-[10px] font-mono text-slate-500">
+            Three.js r128 | Layout Side-by-Side Split View
+        </footer>
+    </aside>
+
+    <!-- ========================================================================
+         RIGHT SIDE: 3D VIEWPORT (FULL CONTAINER)
+         ======================================================================== -->
+    <main class="flex-1 h-full relative bg-black overflow-hidden">
+        <!-- 3D WebGL Canvas Container -->
+        <div id="canvas-container" class="w-full h-full"></div>
+
+        <!-- Overlay Indicator Info -->
+        <div class="absolute top-4 right-4 bg-slate-900/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-700/60 text-xs font-mono text-slate-300 pointer-events-none flex items-center gap-2">
+            <i class="fa-solid fa-arrows-spin text-amber-500 animate-spin"></i>
+            <span>Arraste para rotacionar | Scroll para zoom</span>
+        </div>
+    </main>
+
+    <!-- MAIN JAVASCRIPT LOGIC & THREE.JS GRAPHICS -->
+    <script>
+        /* ========================================================================
+         * 1. GLOBAL STATE & CONFIGURATION
+         * ======================================================================== */
+        const state = {
+            ironLevel: 0,         // 0 to 100 %
+            operatorDist: 120,     // cm
+            temperature: 250,      // °C
+            autoCycle: false,      // Auto cycle running flag
+            cycleStage: 'filling', // 'filling', 'pouring', 'returning'
+            emergencyStop: false,  // E-Stop active
+            
+            // LED Hardware States
+            ledGreen: true,
+            ledYellow: false,
+            ledRed: false,
+            
+            // Bucket Mechanical Pitch Angle (radians)
+            bucketAngle: 0,
+            maxTiltAngle: Math.PI / 2.2,
+            
+            // Mold Melt Level
+            moldFillLevel: 0
+        };
+
+        // DOM Element Cache
+        const dom = {
+            sliderIron: document.getElementById('slider-iron-level'),
+            sliderDist: document.getElementById('slider-operator-dist'),
+            sliderTemp: document.getElementById('slider-temperature'),
+            valIron: document.getElementById('val-iron-level'),
+            valDist: document.getElementById('val-operator-dist'),
+            valTemp: document.getElementById('val-temperature'),
+            lcdLine1: document.getElementById('lcd-line1'),
+            lcdLine2: document.getElementById('lcd-line2'),
+            lcdScreen: document.getElementById('lcd-screen'),
+            btnStart: document.getElementById('btn-start-cycle'),
+            btnStop: document.getElementById('btn-stop-cycle'),
+            btnEmergency: document.getElementById('btn-emergency-stop'),
+            hudLedGreen: document.getElementById('hud-led-green'),
+            hudLedYellow: document.getElementById('hud-led-yellow'),
+            hudLedRed: document.getElementById('hud-led-red'),
+            statusBadge: document.getElementById('system-status-badge'),
+            telemetryMotor: document.getElementById('telemetry-motor'),
+            telemetryRelay: document.getElementById('telemetry-relay'),
+            logContent: document.getElementById('system-log-content'),
+            logTime: document.getElementById('log-time')
+        };
+
+        function addLog(msg) {
+            const now = new Date();
+            const timeStr = now.toTimeString().split(' ')[0];
+            dom.logTime.innerText = timeStr;
+            const logItem = document.createElement('div');
+            logItem.innerText = `[${timeStr}] ${msg}`;
+            dom.logContent.appendChild(logItem);
+            dom.logContent.scrollTop = dom.logContent.scrollHeight;
+        }
+
+        /* ========================================================================
+         * 2. THREE.JS SCENE SETUP & GRAPHICS ENGINE
+         * ======================================================================== */
+        const container = document.getElementById('canvas-container');
+        
+        // Scene, Camera, Renderer
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0d14);
+        scene.fog = new THREE.FogExp2(0x0a0d14, 0.035);
+
+        const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
+        camera.position.set(7, 5, 8);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        container.appendChild(renderer.domElement);
+
+        // Orbit Controls
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxPolarAngle = Math.PI / 2 - 0.02; // Prevents camera going below floor
+        controls.minDistance = 2;
+        controls.maxDistance = 20;
+        controls.target.set(0, 1.8, 0);
+
+        /* ========================================================================
+         * 3. LIGHTING SYSTEM
+         * ======================================================================== */
+        const ambientLight = new THREE.AmbientLight(0x223344, 0.8);
+        scene.add(ambientLight);
+
+        // Overhead Factory Directional Light
+        const dirLight = new THREE.DirectionalLight(0xffeedd, 1.2);
+        dirLight.position.set(5, 12, 7);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.near = 0.5;
+        dirLight.shadow.camera.far = 25;
+        dirLight.shadow.camera.left = -6;
+        dirLight.shadow.camera.right = 6;
+        dirLight.shadow.camera.top = 6;
+        dirLight.shadow.camera.bottom = -6;
+        scene.add(dirLight);
+
+        // Molten Metal Dynamic Glow Light
+        const moltenLight = new THREE.PointLight(0xff4500, 2.5, 6);
+        moltenLight.position.set(0, 2.2, 0);
+        scene.add(moltenLight);
+
+        // Blue Accent Circuit Light
+        const circuitLight = new THREE.PointLight(0x00aaff, 1.0, 4);
+        circuitLight.position.set(-2.8, 1.2, 1.2);
+        scene.add(circuitLight);
+
+        /* ========================================================================
+         * 4. PROCEDURAL TEXTURES GENERATOR
+         * ======================================================================== */
+        function createRustedMetalTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = '#3a3330';
+            ctx.fillRect(0, 0, 512, 512);
+
+            for (let i = 0; i < 8000; i++) {
+                const x = Math.random() * 512;
+                const y = Math.random() * 512;
+                const rustVal = Math.random();
+                if (rustVal > 0.6) ctx.fillStyle = 'rgba(140, 50, 20, 0.2)';
+                else if (rustVal > 0.3) ctx.fillStyle = 'rgba(70, 60, 50, 0.2)';
+                else ctx.fillStyle = 'rgba(20, 20, 20, 0.3)';
+                ctx.fillRect(x, y, Math.random() * 4 + 1, Math.random() * 4 + 1);
+            }
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        const rustTexture = createRustedMetalTexture();
+
+        // --- Dynamic SCADA Computer Monitor Texture Canvas ---
+        const monitorCanvas = document.createElement('canvas');
+        monitorCanvas.width = 1024;
+        monitorCanvas.height = 576; // 16:9 aspect ratio
+        const monitorCtx = monitorCanvas.getContext('2d');
+        const monitorTexture = new THREE.CanvasTexture(monitorCanvas);
+
+        let tempHistory = Array(20).fill(250);
+
+        function drawMonitorSCADA() {
+            const w = monitorCanvas.width;
+            const h = monitorCanvas.height;
+            const ctx = monitorCtx;
+
+            const operatorThreat = state.operatorDist < 50;
+            const tempThreat = state.temperature >= 500;
+            const isHazard = state.emergencyStop || operatorThreat || tempThreat;
+
+            // Background
+            if (isHazard) {
+                const flash = Math.floor(Date.now() / 300) % 2 === 0;
+                ctx.fillStyle = flash ? '#2d080a' : '#140304';
+            } else {
+                ctx.fillStyle = '#080d16';
+            }
+            ctx.fillRect(0, 0, w, h);
+
+            // Grid Lines
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < w; x += 40) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+            }
+            for (let y = 0; y < h; y += 40) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+            }
+
+            // Header Bar
+            ctx.fillStyle = isHazard ? '#881337' : '#0f172a';
+            ctx.fillRect(0, 0, w, 60);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 24px monospace';
+            ctx.fillText('SISTEMA SCADA - MONITORAMENTO INDUSTRIAL ESP32', 20, 38);
+
+            ctx.font = '20px monospace';
+            ctx.fillStyle = '#94a3b8';
+            ctx.fillText(`STATUS: `, w - 280, 38);
+
+            if (state.emergencyStop) {
+                ctx.fillStyle = '#ef4444';
+                ctx.fillText('E-STOP ATIVADO', w - 190, 38);
+            } else if (tempThreat) {
+                ctx.fillStyle = '#ef4444';
+                ctx.fillText('SUPERAQUECIMENTO', w - 190, 38);
+            } else if (operatorThreat) {
+                ctx.fillStyle = '#f59e0b';
+                ctx.fillText('PAUSA PROXIMIDADE', w - 190, 38);
+            } else {
+                ctx.fillStyle = '#10b981';
+                ctx.fillText('SISTEMA OK', w - 190, 38);
+            }
+
+            // Hazard Warning Banners OR Live Telemetry Display
+            if (isHazard) {
+                // Outer Hazard Frame
+                ctx.strokeStyle = tempThreat || state.emergencyStop ? '#ff2222' : '#f59e0b';
+                ctx.lineWidth = 8;
+                ctx.strokeRect(20, 80, w - 40, h - 100);
+
+                ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                ctx.fillRect(30, 90, w - 60, h - 120);
+
+                // Warning Banner Title & Message
+                ctx.textAlign = 'center';
+
+                if (state.emergencyStop) {
+                    ctx.fillStyle = '#ef4444';
+                    ctx.font = 'bold 46px monospace';
+                    ctx.fillText('⚠️ PARADA DE EMERGÊNCIA MANUALLY ATIVADA ⚠️', w / 2, 230);
+                    ctx.fillStyle = '#f87171';
+                    ctx.font = '30px monospace';
+                    ctx.fillText('OPERAÇÃO DO CADINHO PARALISADA IMEDIATAMENTE', w / 2, 330);
+                    ctx.font = '22px monospace';
+                    ctx.fillText('REARME O BOTÃO DE EMERGÊNCIA NO PAINEL PARA CONTINUAR', w / 2, 420);
+                } else if (tempThreat) {
+                    ctx.fillStyle = '#ff3333';
+                    ctx.font = 'bold 44px monospace';
+                    ctx.fillText('🔥 PERIGO: SUPERAQUECIMENTO CRÍTICO! 🔥', w / 2, 210);
+                    ctx.fillStyle = '#fca5a5';
+                    ctx.font = 'bold 36px monospace';
+                    ctx.fillText(`SENSOR DS18B20: ${state.temperature}°C (LIMITE: 500°C)`, w / 2, 290);
+                    ctx.fillStyle = '#f87171';
+                    ctx.font = '24px monospace';
+                    ctx.fillText('SISTEMA INTERROMPIDO POR SEGURANÇA TÉRMICA!', w / 2, 370);
+                    ctx.fillText('RESFRIAMENTO REQUERIDO PARA REINICIAR OPERAÇÃO', w / 2, 430);
+                } else if (operatorThreat) {
+                    ctx.fillStyle = '#f59e0b';
+                    ctx.font = 'bold 40px monospace';
+                    ctx.fillText('⚠️ ALERTA DE SEGURANÇA: OPERADOR PRÓXIMO! ⚠️', w / 2, 210);
+                    ctx.fillStyle = '#fde047';
+                    ctx.font = 'bold 34px monospace';
+                    ctx.fillText(`SENSOR HC-SR04: ${state.operatorDist}cm (DISTÂNCIA MÍNIMA: 50cm)`, w / 2, 290);
+                    ctx.fillStyle = '#fef08a';
+                    ctx.font = '24px monospace';
+                    ctx.fillText('OPERAÇÃO PAUSADA AUTOMATICAMENTE PELO ESP32', w / 2, 370);
+                    ctx.fillText('AUSTE A DISTÂNCIA DO OPERADOR PARA LIBERAR O CICLO', w / 2, 430);
+                }
+
+                ctx.textAlign = 'left';
+            } else {
+                // NORMAL OPERATION DISPLAY
+                // Panel 1: Temperature Chart
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(30, 80, 460, 220);
+                ctx.strokeStyle = '#334155';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(30, 80, 460, 220);
+
+                ctx.fillStyle = '#38bdf8';
+                ctx.font = 'bold 18px monospace';
+                ctx.fillText('HISTÓRICO TEMP (DS18B20)', 45, 110);
+                ctx.font = 'bold 22px monospace';
+                ctx.fillText(`${state.temperature}°C`, 400, 110);
+
+                // Chart line
+                tempHistory.push(state.temperature);
+                if (tempHistory.length > 20) tempHistory.shift();
+
+                ctx.beginPath();
+                ctx.strokeStyle = '#38bdf8';
+                ctx.lineWidth = 3;
+                for (let i = 0; i < tempHistory.length; i++) {
+                    const x = 50 + i * 21;
+                    const y = 270 - (tempHistory[i] / 600) * 140;
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+
+                // Panel 2: Metal Level Meter
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(520, 80, 470, 220);
+                ctx.strokeRect(520, 80, 470, 220);
+
+                ctx.fillStyle = '#fbbf24';
+                ctx.font = 'bold 18px monospace';
+                ctx.fillText('NÍVEL CADINHO (CAPACIDADE)', 535, 110);
+
+                // Bar Frame
+                ctx.fillStyle = '#1e293b';
+                ctx.fillRect(540, 150, 430, 40);
+                // Fill Bar
+                ctx.fillStyle = '#f59e0b';
+                ctx.fillRect(540, 150, (state.ironLevel / 100) * 430, 40);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 20px monospace';
+                ctx.fillText(`${Math.round(state.ironLevel)}%`, 730, 178);
+
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '16px monospace';
+                ctx.fillText(`ETAPA ATUAL: ${state.cycleStage.toUpperCase()}`, 540, 230);
+                ctx.fillText(`MOTOR PASSO: ${state.autoCycle ? 'ATIVO' : 'PARADO'}`, 540, 260);
+
+                // Panel 3: Sensors Telemetry Grid
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(30, 320, 960, 220);
+                ctx.strokeRect(30, 320, 960, 220);
+
+                ctx.fillStyle = '#10b981';
+                ctx.font = 'bold 18px monospace';
+                ctx.fillText('TELEMETRIA DOS SENSORES CONECTADOS AO ESP32', 45, 350);
+
+                ctx.font = '18px monospace';
+                ctx.fillStyle = '#e2e8f0';
+                ctx.fillText(`• SENSOR ULTRASSÔNICO HC-SR04 : ${state.operatorDist} cm (SEGURANÇA > 50cm)`, 50, 395);
+                ctx.fillText(`• SENSOR DE TEMP DS18B20      : ${state.temperature} °C (LIMITE < 500°C)`, 50, 430);
+                ctx.fillText(`• SENSOR MQ-2 (GÁS & FUMAÇA)   : OPERACIONAL (0.02 PPM)`, 50, 465);
+                ctx.fillText(`• DRIVER A4988 / MOTOR NEMA 17: ${state.autoCycle ? 'EM EXECUÇÃO' : 'AGUARDANDO'}`, 50, 500);
+            }
+
+            monitorTexture.needsUpdate = true;
+        }
+
+        /* ========================================================================
+         * 5. 3D MODELS CONSTRUCTION
+         * ======================================================================== */
+
+        // --- Floor ---
+        const floorGeo = new THREE.PlaneGeometry(20, 20);
+        const floorMat = new THREE.MeshStandardMaterial({ color: 0x111620, roughness: 0.8, metalness: 0.2 });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        // Grid Helper
+        const gridHelper = new THREE.GridHelper(20, 20, 0xff6b00, 0x263342);
+        gridHelper.position.y = 0.001;
+        scene.add(gridHelper);
+
+        // --- Industrial Mechanical Rig & Structure ---
+        const rigGroup = new THREE.Group();
+        const pillarMat = new THREE.MeshStandardMaterial({ color: 0x2a323d, metalness: 0.8, roughness: 0.3 });
+        
+        const pillarLeft = new THREE.Mesh(new THREE.BoxGeometry(0.3, 3.5, 0.3), pillarMat);
+        pillarLeft.position.set(-1.2, 1.75, 0);
+        pillarLeft.castShadow = true;
+        rigGroup.add(pillarLeft);
+
+        const pillarRight = pillarLeft.clone();
+        pillarRight.position.set(1.2, 1.75, 0);
+        rigGroup.add(pillarRight);
+
+        const topBeam = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.2, 0.3), pillarMat);
+        topBeam.position.set(0, 3.4, 0);
+        topBeam.castShadow = true;
+        rigGroup.add(topBeam);
+
+        const pivotRodGeo = new THREE.CylinderGeometry(0.08, 0.08, 2.8, 16);
+        pivotRodGeo.rotateZ(Math.PI / 2);
+        const pivotRod = new THREE.Mesh(pivotRodGeo, new THREE.MeshStandardMaterial({ color: 0x8899a6, metalness: 0.9 }));
+        pivotRod.position.set(0, 2.5, 0);
+        rigGroup.add(pivotRod);
+
+        scene.add(rigGroup);
+
+        // --- Bucket / Foundry Crucible (Pivotable Object) ---
+        const bucketPivotGroup = new THREE.Group();
+        bucketPivotGroup.position.set(0, 2.5, 0); // Rotation axis
+
+        // Outer Bucket Frame
+        const bucketOuterGeo = new THREE.CylinderGeometry(0.7, 0.5, 1.2, 32, 1, true);
+        const bucketOuterMat = new THREE.MeshStandardMaterial({ map: rustTexture, roughness: 0.7, metalness: 0.5, side: THREE.DoubleSide });
+        const bucketOuter = new THREE.Mesh(bucketOuterGeo, bucketOuterMat);
+        bucketOuter.position.y = -0.5;
+        bucketOuter.castShadow = true;
+        bucketPivotGroup.add(bucketOuter);
+
+        // Bucket Bottom Cap
+        const bucketBottomGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.08, 32);
+        const bucketBottom = new THREE.Mesh(bucketBottomGeo, bucketOuterMat);
+        bucketBottom.position.y = -1.1;
+        bucketBottom.castShadow = true;
+        bucketPivotGroup.add(bucketBottom);
+
+        // Refractory Lining
+        const bucketInnerGeo = new THREE.CylinderGeometry(0.65, 0.46, 1.18, 32, 1, true);
+        const bucketInnerMat = new THREE.MeshStandardMaterial({ color: 0x4a423a, roughness: 0.9 });
+        const bucketInner = new THREE.Mesh(bucketInnerGeo, bucketInnerMat);
+        bucketInner.position.y = -0.5;
+        bucketPivotGroup.add(bucketInner);
+
+        // Molten Iron Surface inside Bucket
+        const moltenSurfaceGeo = new THREE.CylinderGeometry(0.64, 0.64, 0.05, 32);
+        const moltenMat = new THREE.MeshStandardMaterial({ color: 0xff3300, emissive: 0xff4500, emissiveIntensity: 1.0, roughness: 0.2 });
+        const moltenSurface = new THREE.Mesh(moltenSurfaceGeo, moltenMat);
+        moltenSurface.position.y = -0.05;
+        bucketPivotGroup.add(moltenSurface);
+
+        scene.add(bucketPivotGroup);
+
+        // --- Particles (Pouring Arc Stream) ---
+        const particleCount = 120;
+        const particleGeo = new THREE.BufferGeometry();
+        const particlePos = new Float32Array(particleCount * 3);
+        const particleVel = [];
+
+        for (let i = 0; i < particleCount; i++) {
+            particlePos[i * 3] = 0;
+            particlePos[i * 3 + 1] = -100;
+            particlePos[i * 3 + 2] = 0;
+            particleVel.push({ x: 0, y: 0, z: 0, life: 0 });
+        }
+
+        particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePos, 3));
+        const particleMat = new THREE.PointsMaterial({
+            color: 0xffaa00,
+            size: 0.08,
+            transparent: true,
+            opacity: 0.9,
+            blending: THREE.AdditiveBlending
+        });
+
+        const pouringParticles = new THREE.Points(particleGeo, particleMat);
+        scene.add(pouringParticles);
+
+        // --- Mold / Form on Floor ---
+        const moldGroup = new THREE.Group();
+        moldGroup.position.set(0, 0, 1.2);
+
+        const moldFrameGeo = new THREE.BoxGeometry(1.4, 0.3, 1.4);
+        const moldFrameMat = new THREE.MeshStandardMaterial({ color: 0x222a35, roughness: 0.8 });
+        const moldFrame = new THREE.Mesh(moldFrameGeo, moldFrameMat);
+        moldFrame.position.y = 0.15;
+        moldFrame.castShadow = true;
+        moldFrame.receiveShadow = true;
+        moldGroup.add(moldFrame);
+
+        const moldFillGeo = new THREE.BoxGeometry(1.1, 0.22, 1.1);
+        const moldFillMat = new THREE.MeshStandardMaterial({ color: 0x221111, emissive: 0x000000, roughness: 0.4 });
+        const moldFill = new THREE.Mesh(moldFillGeo, moldFillMat);
+        moldFill.position.y = 0.16;
+        moldFill.scale.set(1, 0.01, 1);
+        moldGroup.add(moldFill);
+
+        scene.add(moldGroup);
+
+        // --- ESP32 Electronic Workbench & Components ---
+        const benchGroup = new THREE.Group();
+        benchGroup.position.set(-3.2, 0, 1.0);
+
+        // Table
+        const benchTop = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.1, 1.8), new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.6 }));
+        benchTop.position.y = 0.9;
+        benchTop.castShadow = true;
+        benchTop.receiveShadow = true;
+        benchGroup.add(benchTop);
+
+        const benchLeg1 = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.9), pillarMat);
+        benchLeg1.position.set(-0.95, 0.45, -0.75);
+        benchGroup.add(benchLeg1);
+        const benchLeg2 = benchLeg1.clone(); benchLeg2.position.set(0.95, 0.45, -0.75); benchGroup.add(benchLeg2);
+        const benchLeg3 = benchLeg1.clone(); benchLeg3.position.set(-0.95, 0.45, 0.75); benchGroup.add(benchLeg3);
+        const benchLeg4 = benchLeg1.clone(); benchLeg4.position.set(0.95, 0.45, 0.75); benchGroup.add(benchLeg4);
+
+        // PCB Breadboard
+        const pcb = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.03, 1.2), new THREE.MeshStandardMaterial({ color: 0x054422, roughness: 0.3 }));
+        pcb.position.set(0, 0.96, 0);
+        pcb.receiveShadow = true;
+        benchGroup.add(pcb);
+
+        // 1. ESP32
+        const esp32Mesh = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.04, 0.55), new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.5 }));
+        esp32Mesh.position.set(-0.5, 1.0, -0.2);
+        benchGroup.add(esp32Mesh);
+        const espShield = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.03, 0.25), new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.9, roughness: 0.2 }));
+        espShield.position.set(-0.5, 1.03, -0.25);
+        benchGroup.add(espShield);
+
+        // 2. Ultrasonic Sensor HC-SR04
+        const hcsr04Base = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.2, 0.05), new THREE.MeshStandardMaterial({ color: 0x0055ff }));
+        hcsr04Base.position.set(0.5, 1.08, 0.4);
+        benchGroup.add(hcsr04Base);
+        const eyeGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.08, 16);
+        eyeGeo.rotateX(Math.PI / 2);
+        const eyeMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.8 });
+        const eye1 = new THREE.Mesh(eyeGeo, eyeMat); eye1.position.set(0.38, 1.08, 0.42); benchGroup.add(eye1);
+        const eye2 = new THREE.Mesh(eyeGeo, eyeMat); eye2.position.set(0.62, 1.08, 0.42); benchGroup.add(eye2);
+
+        // 3. MQ-2 Sensor
+        const mq2Base = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.12, 16), new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.7 }));
+        mq2Base.position.set(-0.5, 1.04, 0.3);
+        benchGroup.add(mq2Base);
+
+        // 4. DS18B20 Temp Probe
+        const ds18b20 = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.25, 12), new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.9 }));
+        ds18b20.position.set(-0.1, 1.08, 0.3);
+        benchGroup.add(ds18b20);
+
+        // 5. Relay Module
+        const relayMesh = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.12, 0.25), new THREE.MeshStandardMaterial({ color: 0x0088cc }));
+        relayMesh.position.set(0, 1.04, -0.3);
+        benchGroup.add(relayMesh);
+
+        // 6. Stepper Driver A4988 & NEMA Motor
+        const nemaMotor = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.6 }));
+        nemaMotor.position.set(0.5, 1.11, -0.3);
+        benchGroup.add(nemaMotor);
+
+        // 7. 3x Indicator LEDs
+        const ledGeo = new THREE.SphereGeometry(0.035, 16, 16);
+        
+        const led3DGreenMat = new THREE.MeshStandardMaterial({ color: 0x003300, emissive: 0x00ff00, emissiveIntensity: 0.8 });
+        const led3DGreen = new THREE.Mesh(ledGeo, led3DGreenMat);
+        led3DGreen.position.set(0.2, 1.0, 0.0);
+        benchGroup.add(led3DGreen);
+
+        const led3DYellowMat = new THREE.MeshStandardMaterial({ color: 0x332200, emissive: 0xffff00, emissiveIntensity: 0.0 });
+        const led3DYellow = new THREE.Mesh(ledGeo, led3DYellowMat);
+        led3DYellow.position.set(0.3, 1.0, 0.0);
+        benchGroup.add(led3DYellow);
+
+        const led3DRedMat = new THREE.MeshStandardMaterial({ color: 0x330000, emissive: 0xff0000, emissiveIntensity: 0.0 });
+        const led3DRed = new THREE.Mesh(ledGeo, led3DRedMat);
+        led3DRed.position.set(0.4, 1.0, 0.0);
+        benchGroup.add(led3DRed);
+
+        // 8. Industrial SCADA Computer Workstation Monitor
+        const monitorGroup = new THREE.Group();
+        monitorGroup.position.set(-0.2, 0.95, -0.45);
+
+        // Monitor Base & Stand
+        const monitorBase = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.02, 16), pillarMat);
+        monitorBase.position.y = 0.01;
+        monitorGroup.add(monitorBase);
+
+        const monitorStand = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.35, 12), pillarMat);
+        monitorStand.position.set(0, 0.18, -0.05);
+        monitorGroup.add(monitorStand);
+
+        // Monitor Frame / Enclosure
+        const monitorFrame = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.55, 0.06), new THREE.MeshStandardMaterial({ color: 0x151b23, roughness: 0.4 }));
+        monitorFrame.position.set(0, 0.45, 0);
+        monitorFrame.castShadow = true;
+        monitorGroup.add(monitorFrame);
+
+        // Display Screen Mesh with Dynamic Canvas Texture
+        const screenMesh = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.84, 0.48),
+            new THREE.MeshBasicMaterial({ map: monitorTexture })
+        );
+        screenMesh.position.set(0, 0.45, 0.032);
+        monitorGroup.add(screenMesh);
+
+        benchGroup.add(monitorGroup);
+
+        scene.add(benchGroup);
+
+        // --- Operator / Presence Avatar ---
+        const operatorGroup = new THREE.Group();
+        
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 1.1, 16), new THREE.MeshStandardMaterial({ color: 0x2563eb }));
+        body.position.y = 0.85;
+        body.castShadow = true;
+        operatorGroup.add(body);
+
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 16), new THREE.MeshStandardMaterial({ color: 0xffdbac }));
+        head.position.y = 1.55;
+        head.castShadow = true;
+        operatorGroup.add(head);
+
+        const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.2, 0.1, 16), new THREE.MeshStandardMaterial({ color: 0xfacc15 }));
+        hat.position.y = 1.68;
+        hat.castShadow = true;
+        operatorGroup.add(hat);
+
+        scene.add(operatorGroup);
+
+        /* ========================================================================
+         * 6. SAFETY LOGIC & CONTROLLER
+         * ======================================================================== */
+
+        let lastSafetyState = '';
+
+        function updateSystemState() {
+            const operatorThreat = state.operatorDist < 50;
+            const tempThreat = state.temperature >= 500;
+
+            if (state.emergencyStop) {
+                handleSafetyTrigger('EMERGÊNCIA MAN.', 'E-STOP ATIVADO', 'E-STOP ativado manualmente.');
+                setLeds(false, false, true);
+            } else if (operatorThreat) {
+                handleSafetyTrigger('PAUSA: PRESENCA!', 'DIST: ' + state.operatorDist + 'cm < 50cm', `Alerta Proximidade: ${state.operatorDist}cm`);
+                setLeds(false, true, false);
+            } else if (tempThreat) {
+                handleSafetyTrigger('ALERTA: TEMP 500C', 'T: ' + state.temperature + 'C OVERHEAT', `Alerta Temperatura: ${state.temperature}°C`);
+                setLeds(false, false, true);
+            } else {
+                if (lastSafetyState !== 'OK') {
+                    addLog("Sistema em estado normal de operação.");
+                    lastSafetyState = 'OK';
+                }
+                setLeds(true, false, false);
+
+                dom.statusBadge.innerText = state.autoCycle ? "CICLO ATIVO" : "OPERACIONAL";
+                dom.statusBadge.className = "px-2.5 py-1 rounded text-[11px] font-bold font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+                dom.lcdScreen.classList.remove('lcd-warning');
+                
+                if (!state.autoCycle) {
+                    updateLCD('SYS: AGUARDANDO', `T:${state.temperature}C | MET:${Math.round(state.ironLevel)}%`);
+                }
+                dom.telemetryRelay.innerText = "LIGADO";
+                dom.telemetryRelay.className = "text-emerald-400 font-bold";
+            }
+
+            led3DGreenMat.emissiveIntensity = state.ledGreen ? 1.0 : 0.0;
+            led3DYellowMat.emissiveIntensity = state.ledYellow ? 1.0 : 0.0;
+            led3DRedMat.emissiveIntensity = state.ledRed ? 1.0 : 0.0;
+        }
+
+        function handleSafetyTrigger(line1, line2, logMsg) {
+            state.autoCycle = false;
+            state.cycleStage = 'filling';
+            
+            updateLCD(line1, line2);
+            dom.lcdScreen.classList.add('lcd-warning');
+            
+            dom.statusBadge.innerText = "INTERRUPÇÃO SEGURANÇA";
+            dom.statusBadge.className = "px-2.5 py-1 rounded text-[11px] font-bold font-mono bg-red-500/20 text-red-400 border border-red-500/30 pulse-alert";
+            
+            dom.telemetryMotor.innerText = "PARADA EMERG.";
+            dom.telemetryMotor.className = "text-red-400 font-bold";
+            dom.telemetryRelay.innerText = "DESLIGADO";
+            dom.telemetryRelay.className = "text-red-500 font-bold";
+
+            if (lastSafetyState !== line1) {
+                addLog(`[INTERRUPÇÃO] ${logMsg}`);
+                lastSafetyState = line1;
+            }
+        }
+
+        function setLeds(green, yellow, red) {
+            state.ledGreen = green;
+            state.ledYellow = yellow;
+            state.ledRed = red;
+
+            dom.hudLedGreen.className = `w-4 h-4 rounded-full ${green ? 'bg-emerald-500 shadow-[0_0_10px_#10b981]' : 'bg-emerald-950'} border border-emerald-800 mb-1 transition-all`;
+            dom.hudLedYellow.className = `w-4 h-4 rounded-full ${yellow ? 'bg-amber-400 shadow-[0_0_10px_#f59e0b]' : 'bg-amber-950'} border border-amber-800 mb-1 transition-all`;
+            dom.hudLedRed.className = `w-4 h-4 rounded-full ${red ? 'bg-red-500 shadow-[0_0_10px_#ef4444]' : 'bg-red-950'} border border-red-800 mb-1 transition-all`;
+        }
+
+        function updateLCD(line1, line2) {
+            dom.lcdLine1.innerText = line1.padEnd(16, ' ').substring(0, 16);
+            dom.lcdLine2.innerText = line2.padEnd(16, ' ').substring(0, 16);
+        }
+
+        /* ========================================================================
+         * 7. EVENT LISTENERS
+         * ======================================================================== */
+
+        dom.sliderIron.addEventListener('input', (e) => {
+            state.ironLevel = parseFloat(e.target.value);
+            dom.valIron.innerText = `${Math.round(state.ironLevel)}%`;
+            updateSystemState();
+        });
+
+        dom.sliderDist.addEventListener('input', (e) => {
+            state.operatorDist = parseInt(e.target.value);
+            dom.valDist.innerText = `${state.operatorDist} cm`;
+            updateSystemState();
+        });
+
+        dom.sliderTemp.addEventListener('input', (e) => {
+            state.temperature = parseInt(e.target.value);
+            dom.valTemp.innerText = `${state.temperature} °C`;
+            updateSystemState();
+        });
+
+        dom.btnStart.addEventListener('click', () => {
+            if (state.operatorDist < 50 || state.temperature >= 500 || state.emergencyStop) {
+                addLog("Falha ao iniciar: Requisitos de segurança violados.");
+                return;
+            }
+            state.autoCycle = true;
+            state.cycleStage = 'filling';
+            dom.telemetryMotor.innerText = "GIRANDO (PASSO)";
+            dom.telemetryMotor.className = "text-sky-400 font-bold";
+            addLog("Iniciado Ciclo Automático.");
+            updateSystemState();
+        });
+
+        dom.btnStop.addEventListener('click', () => {
+            state.autoCycle = false;
+            dom.telemetryMotor.innerText = "PARADO";
+            dom.telemetryMotor.className = "text-slate-500 font-bold";
+            addLog("Ciclo interrompido pelo usuário.");
+            updateSystemState();
+        });
+
+        dom.btnEmergency.addEventListener('click', () => {
+            state.emergencyStop = !state.emergencyStop;
+            if (state.emergencyStop) {
+                dom.btnEmergency.classList.replace('bg-red-600', 'bg-slate-700');
+                dom.btnEmergency.innerHTML = `<i class="fa-solid fa-rotate-left"></i> REARMAR E-STOP`;
+            } else {
+                dom.btnEmergency.classList.replace('bg-slate-700', 'bg-red-600');
+                dom.btnEmergency.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> PARADA DE EMERGÊNCIA (E-STOP)`;
+            }
+            updateSystemState();
+        });
+
+        // Presets
+        document.getElementById('cam-preset-global').addEventListener('click', () => {
+            animateCamera(new THREE.Vector3(7, 5, 8), new THREE.Vector3(0, 1.8, 0));
+        });
+        document.getElementById('cam-preset-bucket').addEventListener('click', () => {
+            animateCamera(new THREE.Vector3(3, 3, 4), new THREE.Vector3(0, 2, 0.5));
+        });
+        document.getElementById('cam-preset-esp').addEventListener('click', () => {
+            animateCamera(new THREE.Vector3(-3.2, 2.5, 2.8), new THREE.Vector3(-3.2, 0.9, 1.0));
+        });
+        document.getElementById('cam-preset-pc').addEventListener('click', () => {
+            animateCamera(new THREE.Vector3(-3.4, 1.8, 0.8), new THREE.Vector3(-3.4, 1.4, -0.2));
+        });
+
+        function animateCamera(targetPos, lookAtTarget) {
+            const startPos = camera.position.clone();
+            const startTarget = controls.target.clone();
+            let progress = 0;
+
+            function step() {
+                progress += 0.04;
+                if (progress <= 1) {
+                    camera.position.lerpVectors(startPos, targetPos, progress);
+                    controls.target.lerpVectors(startTarget, lookAtTarget, progress);
+                    controls.update();
+                    requestAnimationFrame(step);
+                }
+            }
+            step();
+        }
+
+        /* ========================================================================
+         * 8. ANIMATION LOOP
+         * ======================================================================== */
+
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+
+            // 1. Update Operator Avatar Position
+            const targetZ = THREE.MathUtils.mapLinear(state.operatorDist, 10, 200, 1.5, 6.0);
+            operatorGroup.position.z = THREE.MathUtils.lerp(operatorGroup.position.z, targetZ, 0.1);
+
+            // 2. Automated Cycle Logic
+            if (state.autoCycle && !state.emergencyStop && state.operatorDist >= 50 && state.temperature < 500) {
+                if (state.cycleStage === 'filling') {
+                    state.ironLevel += delta * 25;
+                    updateLCD('CICLO: ENCHENDO', `PROGRESSO: ${Math.round(state.ironLevel)}%`);
+
+                    if (state.ironLevel >= 100) {
+                        state.ironLevel = 100;
+                        state.cycleStage = 'pouring';
+                        addLog("Cadinho cheio (100%). Iniciando descarte...");
+                    }
+                } else if (state.cycleStage === 'pouring') {
+                    state.bucketAngle = THREE.MathUtils.lerp(state.bucketAngle, state.maxTiltAngle, delta * 2.0);
+                    updateLCD('CICLO: VAZANDO', `DESPEJANDO METAL`);
+
+                    if (state.bucketAngle > state.maxTiltAngle * 0.7) {
+                        state.ironLevel -= delta * 30;
+                        state.moldFillLevel = Math.min(100, state.moldFillLevel + delta * 35);
+                        
+                        if (state.ironLevel <= 0) {
+                            state.ironLevel = 0;
+                            state.cycleStage = 'returning';
+                            addLog("Cadinho esvaziado. Retornando...");
+                        }
+                    }
+                } else if (state.cycleStage === 'returning') {
+                    state.bucketAngle = THREE.MathUtils.lerp(state.bucketAngle, 0, delta * 2.5);
+                    updateLCD('CICLO: RETORNO', `POSICAO INICIAL`);
+
+                    if (state.bucketAngle < 0.05) {
+                        state.bucketAngle = 0;
+                        state.cycleStage = 'filling';
+                    }
+                }
+
+                dom.sliderIron.value = state.ironLevel;
+                dom.valIron.innerText = `${Math.round(state.ironLevel)}%`;
+            } else {
+                state.bucketAngle = THREE.MathUtils.lerp(state.bucketAngle, 0, delta * 3.0);
+            }
+
+            // 3. Bucket Tilt & Metal Level
+            bucketPivotGroup.rotation.x = state.bucketAngle;
+            moltenSurface.position.y = THREE.MathUtils.mapLinear(state.ironLevel, 0, 100, -0.95, -0.05);
+            moltenSurface.visible = state.ironLevel > 1;
+
+            // 4. Pouring Particles
+            const positions = pouringParticles.geometry.attributes.position.array;
+            const isPouring = state.bucketAngle > 0.4 && state.ironLevel > 2;
+
+            for (let i = 0; i < particleCount; i++) {
+                if (isPouring) {
+                    if (particleVel[i].life <= 0) {
+                        positions[i * 3] = (Math.random() - 0.5) * 0.1;
+                        positions[i * 3 + 1] = 2.0;
+                        positions[i * 3 + 2] = 0.6;
+                        
+                        particleVel[i] = {
+                            x: (Math.random() - 0.5) * 0.1,
+                            y: -1.8 - Math.random() * 1.5,
+                            z: 0.8 + Math.random() * 0.4,
+                            life: 1.0
+                        };
+                    } else {
+                        positions[i * 3] += particleVel[i].x * delta;
+                        positions[i * 3 + 1] += particleVel[i].y * delta;
+                        positions[i * 3 + 2] += particleVel[i].z * delta;
+                        particleVel[i].life -= delta * 1.8;
+
+                        if (positions[i * 3 + 1] <= 0.2) {
+                            particleVel[i].life = 0;
+                        }
+                    }
+                } else {
+                    positions[i * 3 + 1] = -100;
+                    particleVel[i].life = 0;
+                }
+            }
+            pouringParticles.geometry.attributes.position.needsUpdate = true;
+
+            // 5. Mold Cooling
+            const moldScaleY = THREE.MathUtils.mapLinear(state.moldFillLevel, 0, 100, 0.01, 1.0);
+            moldFill.scale.y = moldScaleY;
+            
+            if (state.moldFillLevel > 0) {
+                state.moldFillLevel = Math.max(0, state.moldFillLevel - delta * 2.0);
+                moldFillMat.emissive.setHex(0xff3300);
+                moldFillMat.emissiveIntensity = state.moldFillLevel / 100.0;
+            }
+
+            moltenLight.intensity = (state.ironLevel / 100.0) * 2.5 + Math.sin(time * 8) * 0.3;
+
+            // 6. Update Industrial SCADA Computer Monitor Display Texture
+            drawMonitorSCADA();
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        /* ========================================================================
+         * 9. RESIZE & INITIALIZATION
+         * ======================================================================== */
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        });
+
+        window.onload = function() {
+            updateSystemState();
+            animate();
+        };
+    </script>
+</body>
+</html>
